@@ -9,38 +9,34 @@ mod tests {
     fn test_master_key() {
         // "Bitcoin seed"
         let master_secret = [66, 105, 116, 99, 111, 105, 110, 32, 115, 101, 101, 100];
+        // 
         type HmacSha512 = Hmac<Sha512>;
         let mnemonic = bip39::Mnemonic::from_str(
             "soldier shell mango cricket future true olympic sleep cupboard easy record hero",
         )
         .unwrap();
-        // bip39::Mnemonic::from_entropy(entropy)
+
+        // 熵
         let entryop = mnemonic.to_entropy();
         assert_eq!("ce98ae1c99b5e9d2a6965935c8bacf35", hex::encode(&entryop));
         let m2 = bip39::Mnemonic::from_entropy(&entryop).unwrap();
-
         let seed = m2.to_seed("");
         assert_eq!("7a17d52d7ad8bb1a280337686867c6a1c27180d6f38b7215299fa92b8e4ee4153eb4aca41db0fd79774bb34a57ecdbbf83db8f23bfa57ff2673f7c05d3d2b172",hex::encode(&seed));
-        // let m2 =bip39::Mnemonic::from(&entryop).unwrap();
 
+        // seed to mac
         let mut mac =
             HmacSha512::new_from_slice(&master_secret).expect("HMAC can take key of any size");
 
         mac.update(&seed);
-
-        // `result` has type `CtOutput` which is a thin wrapper around array of
-        // bytes for providing constant time equality check
         let result = mac.finalize();
-        // To get underlying array use `into_bytes`, but be careful, since
-        // incorrect use of the code value may permit timing attacks which defeats
-        // the security provided by the `CtOutput`
-        let code_bytes: Vec<u8> = result.into_bytes().to_vec();
-        let mut private_key_array: [u8; 32] = [0; 32];
-        private_key_array.copy_from_slice(&code_bytes[0..32]);
-        let secret_key = SecretKey::from_slice(&private_key_array).unwrap();
 
-        // 压缩公钥匙
-        // let compress_public_key =  secret_key.public_key().to_sec1_bytes().to_vec();
+        let code_bytes = result.into_bytes().to_vec();
+        let chain_code = &code_bytes[32..];
+        assert_eq!("4e76830cd1ded64f0a2f216a7af2b80c7aaa6dbd700693d8cb08cc001dfa458c",hex::encode(chain_code));
+        let private_key = &code_bytes[0..32];
+        assert_eq!("af69679d4e2dde95b5d585fc4e74b2318612a34e600356d81c6b2b3fd986cd0d",hex::encode(private_key));
+
+        let secret_key = SecretKey::from_slice(private_key).unwrap();
 
         // 压缩公钥匙 hex
         let compress_public_key_hex = hex::encode(secret_key.public_key().to_sec1_bytes().to_vec());
