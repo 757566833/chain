@@ -41,10 +41,18 @@ impl From<k256::elliptic_curve::Error> for CustomError {
         }
     }
 }
+impl From<std::num::ParseIntError> for CustomError {
+    fn from(error: std::num::ParseIntError) -> Self {
+        CustomError {
+            msg: error.to_string(),
+        }
+    }
+}
 
 const MASTER_SECRET: [u8; 12] = [66, 105, 116, 99, 111, 105, 110, 32, 115, 101, 101, 100];
+const HARDENED_BIT: u64 = 0x80000000;
+type HmacSha512 = Hmac<Sha512>;
 pub fn get_master_by_mnemonic_str(mnemonic_str: &str) -> Result<HDNode, CustomError> {
-    type HmacSha512 = Hmac<Sha512>;
     let mnemonic: bip39::Mnemonic = bip39::Mnemonic::from_str(mnemonic_str)?;
     let entryop = mnemonic.to_entropy();
     let seed = mnemonic.to_seed("");
@@ -84,9 +92,53 @@ pub fn get_master_by_mnemonic_str(mnemonic_str: &str) -> Result<HDNode, CustomEr
     });
 }
 
+// pub fn get_children_node_by_path(node:HDNode,path:String)-> Result<HDNode, CustomError>{
+//     let components = path.split("/");
+//     for component in components {
+//         if component.contains("'"){
+//             let index = component.replace("'", "").parse::<u64>()?+HARDENED_BIT;
+//             // index, this.chainCode, this.publicKey, this.privateKey
+//         }else{
+//             let index = component.replace("'", "").parse::<u64>()?;
+//         }
+//     }
+//     return  Ok(HDNode { entryop: (), seed: (), address: (), private_key: (), public_key: (), chain_code: (), path: (), index: (), depth: () });
+// }
+pub fn ser_i(
+    index: u64,
+    chain_code: &[u8; 32],
+    public_key: &[u8],
+    private_key: &[u8; 32],
+) -> Result<(Vec<u8>, Vec<u8>), CustomError> {
+    let mut data: Vec<u8> = vec![0; 37];
+
+    if index & HARDENED_BIT != 0 {
+        data[1..33].copy_from_slice(private_key);
+    } else {
+        data[..public_key.len()].copy_from_slice(public_key);
+    }
+    for i in (0..=24).step_by(8) {
+        let byte_index = 33 + (i >> 3);
+        data[byte_index] = ((index >> (24 - i)) & 0xFF) as u8;
+    }
+
+    let mut mac = HmacSha512::new_from_slice(chain_code)?;
+    mac.update(&data);
+    let result = mac.finalize();
+    let hmac_result = result.into_bytes().to_vec();
+
+    Ok((hmac_result[..32].to_vec(), hmac_result[32..].to_vec()))
+}
+pub fn vec_u8_to_biguint(vec: Vec<u8>) -> num_bigint::BigUint {
+    // Use BigUint::from_bytes_le to create a BigUint from the little-endian byte representation
+    num_bigint::BigUint::from_bytes_be(&vec)
+}
 #[cfg(test)]
 mod tests {
+
     use crate::mnemonic::get_master_by_mnemonic_str;
+
+    use super::{ser_i, vec_u8_to_biguint};
 
     #[test]
     fn test_master_key() {
@@ -116,5 +168,49 @@ mod tests {
             hex::encode(master_node.address)
         );
         // m2.to_seed("")
+    }
+    
+    #[test]
+    fn test_ser_i() {
+        let index: u64 = 2147483692;
+        let mut chain_code = [0; 32];
+        let chain_code_binding =
+            hex::decode("4e76830cd1ded64f0a2f216a7af2b80c7aaa6dbd700693d8cb08cc001dfa458c")
+                .unwrap();
+        chain_code.copy_from_slice(&chain_code_binding.as_slice()[0..32]);
+
+        let public_key =
+            hex::decode("0353f006bb6bcf336fef39d827a245d7bef5555ce0cf0d27363b6cc080f1467b93")
+                .unwrap();
+        let mut private_key = [0; 32];
+        let private_key_binding =
+            hex::decode("af69679d4e2dde95b5d585fc4e74b2318612a34e600356d81c6b2b3fd986cd0d")
+                .unwrap();
+        private_key.copy_from_slice(&private_key_binding.as_slice()[0..32]);
+        // let mut chainCode:&[u8; 32] = hex::decode("4e76830cd1ded64f0a2f216a7af2b80c7aaa6dbd700693d8cb08cc001dfa458c").unwrap().as_slice();
+        let (il, ir) = ser_i(index, &chain_code, &public_key, &private_key).unwrap();
+        assert_eq!(
+            vec![
+                243, 247, 234, 180, 36, 1, 115, 65, 160, 119, 90, 123, 55, 214, 193, 239, 218, 180,
+                105, 245, 243, 200, 152, 191, 70, 91, 134, 126, 218, 138, 71, 216
+            ],
+            il
+        );
+        assert_eq!(
+            vec![
+                23, 207, 169, 120, 7, 85, 101, 29, 102, 142, 93, 82, 242, 186, 0, 122, 71, 68, 42,
+                222, 188, 205, 11, 13, 219, 254, 207, 17, 165, 160, 185, 114
+            ],
+            ir
+        );
+        // println!("{:?}",b);
+    }
+    #[test]
+    fn test_vec_to_big_num() {
+        let res = vec_u8_to_biguint(vec![
+            243, 247, 234, 180, 36, 1, 115, 65, 160, 119, 90, 123, 55, 214, 193, 239, 218, 180,
+            105, 245, 243, 200, 152, 191, 70, 91, 134, 126, 218, 138, 71, 216
+        ]);
+        assert_eq!("110350053295961381469194980161768063875012486900999354933219462641092364224472",res.to_string())
     }
 }
