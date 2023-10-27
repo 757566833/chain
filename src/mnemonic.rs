@@ -7,7 +7,7 @@ use std::str::FromStr;
 pub struct HDNode {
     entryop: Vec<u8>,
     seed: [u8; 64],
-    address: Vec<u8>,
+    address: [u8; 20],
     private_key: [u8; 32],
     un_compressed_public_key: Vec<u8>,
     public_key: Vec<u8>,
@@ -77,8 +77,8 @@ pub fn get_master_by_mnemonic_str(mnemonic_str: &str) -> Result<HDNode, CustomEr
     // 去掉开头的 02、03、04
     hasher.update(&un_comporess_affine_point[1..]);
     let address_vec: Vec<u8> = hasher.finalize().to_vec();
-
-    let address = address_vec[12..].to_vec();
+    let mut address =[0;20];
+    address.copy_from_slice(&address_vec[12..]);
     return Ok(HDNode {
         entryop,
         seed,
@@ -141,8 +141,9 @@ pub fn get_children_node_by_path(node: &HDNode, path: String) -> Result<HDNode, 
         hasher.update(&un_comporess_affine_point[1..]);
         let address_vec: Vec<u8> = hasher.finalize().to_vec();
 
-        let address = address_vec[12..].to_vec();
 
+        let mut address =[0;20];
+        address.copy_from_slice(&address_vec[12..]);
         target.address = address;
         target.private_key = private_key;
 
