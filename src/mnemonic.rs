@@ -3,7 +3,7 @@ use k256::{elliptic_curve::sec1::ToEncodedPoint, AffinePoint, SecretKey};
 use sha2::Sha512;
 use sha3::{Digest, Keccak256};
 use std::str::FromStr;
-#[derive(Debug)]
+#[derive(Clone,Debug)]
 pub struct HDNode {
     entryop: Vec<u8>,
     seed: [u8; 64],
@@ -12,9 +12,6 @@ pub struct HDNode {
     un_compressed_public_key: Vec<u8>,
     public_key: Vec<u8>,
     chain_code: [u8; 32],
-    path: String,
-    index: u64,
-    depth: u64,
 }
 #[derive(Debug, Clone)]
 
@@ -89,14 +86,11 @@ pub fn get_master_by_mnemonic_str(mnemonic_str: &str) -> Result<HDNode, CustomEr
         public_key: compress_public_key,
         un_compressed_public_key: un_comporess_affine_point.to_vec(),
         chain_code,
-        path: "m".to_string(),
-        index: 0,
-        depth: 0,
     });
 }
 
-pub fn get_children_node_by_path(node: HDNode, path: String) -> Result<HDNode, CustomError> {
-    let mut target: HDNode = node;
+pub fn get_children_node_by_path(node: &HDNode, path: String) -> Result<HDNode, CustomError> {
+    let mut target: HDNode = node.clone();
     let components = path.split("/");
     for component in components {
         if component.contains("m") {
@@ -104,14 +98,11 @@ pub fn get_children_node_by_path(node: HDNode, path: String) -> Result<HDNode, C
         }
         let index;
         if component.contains("'") {
-            println!("{}", component.replace("'", ""));
             index = component.replace("'", "").parse::<u64>()? + HARDENED_BIT;
             // index, this.chainCode, this.publicKey, this.privateKey
         } else {
-            println!("{}", component);
             index = component.parse::<u64>()?;
         }
-        println!("index is {}", index);
         let (il, ir) = ser_i(
             index,
             &target.chain_code,
@@ -123,16 +114,13 @@ pub fn get_children_node_by_path(node: HDNode, path: String) -> Result<HDNode, C
             16,
         )
         .unwrap();
-        println!("parse n:{}", n.to_string());
         // todo
-        let code_bytes = (vec_u8_to_biguint(il)
-            + vec_u8_to_biguint(target.private_key.to_vec()) % n)
+        let code_bytes = ((vec_u8_to_biguint(il) + vec_u8_to_biguint(target.private_key.to_vec()))
+            % n)
             .to_bytes_be();
-        println!("{}",hex::encode(code_bytes.clone()));
+
         let mut private_key = [0; 32];
         private_key.copy_from_slice(&code_bytes[0..32]);
-        let mut chain_code = [0; 32];
-        chain_code.copy_from_slice(&code_bytes[32..]);
         let secret_key = SecretKey::from_slice(&private_key)?;
         // 压缩公钥匙 hex
         let compress_public_key = secret_key.public_key().to_sec1_bytes().to_vec();
@@ -157,18 +145,6 @@ pub fn get_children_node_by_path(node: HDNode, path: String) -> Result<HDNode, C
         let mut chain_code = [0; 32];
         chain_code.copy_from_slice(&ir[0..32]);
         target.chain_code = chain_code;
-        // target = HDNode {
-        //     entryop: a,
-        //     seed: node.seed.clone(),
-        //     address: todo!(),
-        //     private_key: todo!(),
-        //     un_compressed_public_key: todo!(),
-        //     public_key: todo!(),
-        //     chain_code: todo!(),
-        //     path,
-        //     index,
-        //     depth: todo!(),
-        // }
     }
     return Ok(target);
 }
@@ -295,7 +271,13 @@ mod tests {
             "soldier shell mango cricket future true olympic sleep cupboard easy record hero",
         )
         .unwrap();
-        let res = get_children_node_by_path(master_node, "m/44'/60'/0'/0/0".to_string()).unwrap();
-        println!("{:?}", res);
+        let res = get_children_node_by_path(&master_node, "m/44'/60'/0'/0/0".to_string()).unwrap();
+
+        assert_eq!(master_node.entryop, res.entryop);
+        assert_eq!(master_node.seed, res.seed);
+        assert_eq!("0ab5a3e7d8466e0bce128889984011bc1df639df30039da5cc78824a4c302e33", hex::encode(res.private_key));
+        assert_eq!("a303721f08b85af1fdf7c57152b9e31d4bca397b", hex::encode(res.address));
+        assert_eq!("03de0aff9f453443d29cd86075fdcb03d8662f70ad9c1a376f8612c8f2ac989e55", hex::encode(res.public_key));
+        assert_eq!("6e9e60f70a8d7ab095d087bc594de162984d98b549809f3a3de72f798ef4809e", hex::encode(res.chain_code));
     }
 }
