@@ -3,7 +3,7 @@ use k256::{elliptic_curve::sec1::ToEncodedPoint, AffinePoint, SecretKey};
 use sha2::Sha512;
 use sha3::{Digest, Keccak256};
 use std::str::FromStr;
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct HDNode {
     entryop: Vec<u8>,
     seed: [u8; 64],
@@ -12,6 +12,7 @@ pub struct HDNode {
     un_compressed_public_key: Vec<u8>,
     public_key: Vec<u8>,
     chain_code: [u8; 32],
+    path: String,
 }
 #[derive(Debug, Clone)]
 
@@ -86,6 +87,7 @@ pub fn get_master_by_mnemonic_str(mnemonic_str: &str) -> Result<HDNode, CustomEr
         public_key: compress_public_key,
         un_compressed_public_key: un_comporess_affine_point.to_vec(),
         chain_code,
+        path: "m".to_string(),
     });
 }
 
@@ -94,14 +96,18 @@ pub fn get_children_node_by_path(node: &HDNode, path: String) -> Result<HDNode, 
     let components = path.split("/");
     for component in components {
         if component.contains("m") {
+            target.path = "m".to_string();
             continue;
         }
         let index;
         if component.contains("'") {
-            index = component.replace("'", "").parse::<u64>()? + HARDENED_BIT;
+            let origin = component.replace("'", "").parse::<u64>()?;
+            index = origin + HARDENED_BIT;
+            target.path = format!("{}/{}'", target.path, origin);
             // index, this.chainCode, this.publicKey, this.privateKey
         } else {
             index = component.parse::<u64>()?;
+            target.path = format!("{}/{}", target.path, index);
         }
         let (il, ir) = ser_i(
             index,
@@ -273,11 +279,24 @@ mod tests {
         .unwrap();
         let res = get_children_node_by_path(&master_node, "m/44'/60'/0'/0/0".to_string()).unwrap();
 
+        assert_eq!("m/44'/60'/0'/0/0", res.path);
         assert_eq!(master_node.entryop, res.entryop);
         assert_eq!(master_node.seed, res.seed);
-        assert_eq!("0ab5a3e7d8466e0bce128889984011bc1df639df30039da5cc78824a4c302e33", hex::encode(res.private_key));
-        assert_eq!("a303721f08b85af1fdf7c57152b9e31d4bca397b", hex::encode(res.address));
-        assert_eq!("03de0aff9f453443d29cd86075fdcb03d8662f70ad9c1a376f8612c8f2ac989e55", hex::encode(res.public_key));
-        assert_eq!("6e9e60f70a8d7ab095d087bc594de162984d98b549809f3a3de72f798ef4809e", hex::encode(res.chain_code));
+        assert_eq!(
+            "0ab5a3e7d8466e0bce128889984011bc1df639df30039da5cc78824a4c302e33",
+            hex::encode(res.private_key)
+        );
+        assert_eq!(
+            "a303721f08b85af1fdf7c57152b9e31d4bca397b",
+            hex::encode(res.address)
+        );
+        assert_eq!(
+            "03de0aff9f453443d29cd86075fdcb03d8662f70ad9c1a376f8612c8f2ac989e55",
+            hex::encode(res.public_key)
+        );
+        assert_eq!(
+            "6e9e60f70a8d7ab095d087bc594de162984d98b549809f3a3de72f798ef4809e",
+            hex::encode(res.chain_code)
+        );
     }
 }
