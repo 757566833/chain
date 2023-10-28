@@ -3,6 +3,8 @@ use k256::{elliptic_curve::sec1::ToEncodedPoint, AffinePoint, SecretKey};
 use sha2::Sha512;
 use sha3::{Digest, Keccak256};
 use std::str::FromStr;
+
+use crate::CustomError;
 #[derive(Clone, Debug)]
 pub struct HDNode {
     entryop: Vec<u8>,
@@ -14,40 +16,8 @@ pub struct HDNode {
     chain_code: [u8; 32],
     path: String,
 }
-#[derive(Debug, Clone)]
 
-pub struct CustomError {
-    pub msg: String,
-}
 
-impl From<bip39::Error> for CustomError {
-    fn from(error: bip39::Error) -> Self {
-        CustomError {
-            msg: error.to_string(),
-        }
-    }
-}
-impl From<sha2::digest::InvalidLength> for CustomError {
-    fn from(error: sha2::digest::InvalidLength) -> Self {
-        CustomError {
-            msg: error.to_string(),
-        }
-    }
-}
-impl From<k256::elliptic_curve::Error> for CustomError {
-    fn from(error: k256::elliptic_curve::Error) -> Self {
-        CustomError {
-            msg: error.to_string(),
-        }
-    }
-}
-impl From<std::num::ParseIntError> for CustomError {
-    fn from(error: std::num::ParseIntError) -> Self {
-        CustomError {
-            msg: error.to_string(),
-        }
-    }
-}
 
 const MASTER_SECRET: [u8; 12] = [66, 105, 116, 99, 111, 105, 110, 32, 115, 101, 101, 100];
 const HARDENED_BIT: u64 = 0x80000000;
