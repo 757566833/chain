@@ -21,7 +21,13 @@ pub struct HDNode {
 
 const MASTER_SECRET: [u8; 12] = [66, 105, 116, 99, 111, 105, 110, 32, 115, 101, 101, 100];
 const HARDENED_BIT: u64 = 0x80000000;
+const N_BE: [u8; 32] = [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 186, 174, 220, 230, 175, 72, 160, 59, 191, 210, 94, 140, 208, 54, 65, 65];
 type HmacSha512 = Hmac<Sha512>;
+
+pub fn mnemonic_generate ()-> Result<String, CustomError> {
+    let m = bip39::Mnemonic::generate(12)?;
+    return Ok(m.to_string())
+}
 pub fn get_master_by_mnemonic_str(mnemonic_str: &str) -> Result<HDNode, CustomError> {
     let mnemonic: bip39::Mnemonic = bip39::Mnemonic::from_str(mnemonic_str)?;
     let entryop = mnemonic.to_entropy();
@@ -61,7 +67,7 @@ pub fn get_master_by_mnemonic_str(mnemonic_str: &str) -> Result<HDNode, CustomEr
     });
 }
 
-pub fn get_children_node_by_path(node: &HDNode, path: String) -> Result<HDNode, CustomError> {
+pub fn  get_children_node_by_path(node: &HDNode, path: String) -> Result<HDNode, CustomError> {
     let mut target: HDNode = node.clone();
     let components = path.split("/");
     for component in components {
@@ -85,11 +91,7 @@ pub fn get_children_node_by_path(node: &HDNode, path: String) -> Result<HDNode, 
             &target.public_key,
             &target.private_key,
         )?;
-        let n = num_bigint::BigUint::parse_bytes(
-            "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141".as_bytes(),
-            16,
-        )
-        .unwrap();
+        let n = num_bigint::BigUint::from_bytes_be(&N_BE);
         // todo
         let code_bytes = ((vec_u8_to_biguint(il) + vec_u8_to_biguint(target.private_key.to_vec()))
             % n)
@@ -134,6 +136,7 @@ pub fn ser_i(
     let mut data: Vec<u8> = vec![0; 37];
 
     if index & HARDENED_BIT != 0 {
+        println!("{}",index);
         data[1..33].copy_from_slice(private_key);
     } else {
         data[..public_key.len()].copy_from_slice(public_key);
