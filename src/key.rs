@@ -25,10 +25,9 @@ pub fn private_key_to_wallet(private_key: &[u8; 32]) -> Result<Wallet, CustomErr
     let affine_point = AffinePoint::from(secret_key.public_key());
     // 非压缩公钥
     let un_comporess_affine_point = affine_point.to_encoded_point(false).to_bytes();
-    // println!("{}", hex::encode(un_comporess_affine_point));
 
     let mut hasher = Keccak256::new();
-    // 去掉开头的 02、03、04
+    // 去掉开头的 02、04
     hasher.update(&un_comporess_affine_point[1..]);
     let address_vec: Vec<u8> = hasher.finalize().to_vec();
     let mut address = [0; 20];

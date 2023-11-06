@@ -47,10 +47,9 @@ pub fn get_master_by_mnemonic_str(mnemonic_str: &str) -> Result<HDNode, CustomEr
     let affine_point = AffinePoint::from(secret_key.public_key());
     // 非压缩公钥
     let un_comporess_affine_point = affine_point.to_encoded_point(false).to_bytes();
-    // println!("{}", hex::encode(un_comporess_affine_point));
 
     let mut hasher = Keccak256::new();
-    // 去掉开头的 02、03、04
+    // 去掉开头的 02、04
     hasher.update(&un_comporess_affine_point[1..]);
     let address_vec: Vec<u8> = hasher.finalize().to_vec();
     let mut address =[0;20];
@@ -106,10 +105,10 @@ pub fn  get_children_node_by_path(node: &HDNode, path: String) -> Result<HDNode,
         let affine_point = AffinePoint::from(secret_key.public_key());
         // 非压缩公钥
         let un_comporess_affine_point = affine_point.to_encoded_point(false).to_bytes();
-        // println!("{}", hex::encode(un_comporess_affine_point));
+     
 
         let mut hasher = Keccak256::new();
-        // 去掉开头的 02、03、04
+        // 去掉开头的 02、04
         hasher.update(&un_comporess_affine_point[1..]);
         let address_vec: Vec<u8> = hasher.finalize().to_vec();
 
@@ -136,7 +135,6 @@ pub fn ser_i(
     let mut data: Vec<u8> = vec![0; 37];
 
     if index & HARDENED_BIT != 0 {
-        println!("{}",index);
         data[1..33].copy_from_slice(private_key);
     } else {
         data[..public_key.len()].copy_from_slice(public_key);
@@ -232,7 +230,6 @@ mod tests {
             ],
             ir
         );
-        // println!("{:?}",b);
     }
     #[test]
     fn test_vec_to_big_num() {
