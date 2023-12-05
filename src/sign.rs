@@ -1,11 +1,26 @@
 use std::str::FromStr;
 
-use k256::ecdsa::{RecoveryId, Signature, SigningKey};
+use k256::{ecdsa::{RecoveryId, Signature, SigningKey, VerifyingKey}, elliptic_curve};
 use rlp::RlpStream;
 use sha2::digest::core_api::CoreWrapper;
 use sha3::{Digest, Keccak256, Keccak256Core};
+use hmac::digest::typenum::Unsigned;
 
-use crate::error::ResponseError;
+#[derive(Debug)]
+pub struct Error {
+    pub message: String,
+}
+
+/**
+ * 私钥生成签名对象失败
+ */
+impl From<k256::ecdsa::Error> for Error {
+    fn from(error: k256::ecdsa::Error) -> Self {
+        Error {
+            message: error.to_string(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct SignLegacyTransaction {
@@ -103,7 +118,7 @@ pub fn rlp_encode(request: &SignTransactionRequest) -> Vec<u8> {
     }
 }
 
-fn get_sign_key_by_vec(private: &[u8]) -> Result<SigningKey, ResponseError> {
+fn get_sign_key_by_vec(private: &[u8]) -> Result<SigningKey, Error> {
     let mut private_key_array: [u8; 32] = [0; 32];
     private_key_array.copy_from_slice(private);
     let result = k256::ecdsa::SigningKey::from_slice(&private_key_array)?;
@@ -166,7 +181,7 @@ fn rlp_encode_full(
         }
     }
 }
-pub fn sign(private: &[u8], request: SignTransactionRequest) -> Result<Vec<u8>, ResponseError> {
+pub fn sign(private: &[u8], request: SignTransactionRequest) -> Result<Vec<u8>, Error> {
     let rlp = rlp_encode(&request);
     let hasher = keccak256(&rlp);
 
@@ -191,24 +206,99 @@ pub fn sign(private: &[u8], request: SignTransactionRequest) -> Result<Vec<u8>, 
     let full = rlp_encode_full(&request, signature, id);
     return Ok(full);
 }
+pub struct S {
+    pub signature: Signature,
+    pub i: RecoveryId,
+}
+pub fn sign_message(private: &[u8], message: String) -> Result<S, Error> {
+    let bytes: Vec<u8> = message.into_bytes();
+    let digest = Keccak256::new_with_prefix(bytes);
 
-fn keccak256(data: &Vec<u8>) -> CoreWrapper<Keccak256Core> {
+    let sign = get_sign_key_by_vec(private)?;
+
+    // let hash = hasher.clone().finalize();
+    // Digest::
+
+    // let (result, id) = sign.sign_digest(hash).unwrap();
+
+    // id is 0
+    let (signature, id) = sign.sign_digest_recoverable(digest)?;
+    // signature: Signature,
+    // id: RecoveryId,
+    // id is 0
+    // let (result, id) = sign.sign_prehash_recoverable(&hash).unwrap();
+
+    // id is 1
+    // let (result, id) = sign.sign_recoverable(&hash).unwrap();
+
+    // id is 1
+    // let (result, id) = sign.try_sign(&hash).unwrap();
+    return Ok(S { signature, i: id });
+}
+pub fn verify_digest_recoverable_signature(s: S, message: String) -> Result<VerifyingKey, Error> {
+    let bytes: Vec<u8> = message.into_bytes();
+    let digest = Keccak256::new_with_prefix(bytes);
+    let signature = s.signature;
+    let id = s.i;
+    let recovered_key = VerifyingKey::recover_from_digest(digest, &signature, id)?;
+    return Ok(recovered_key);
+}
+pub fn verify_recoverable_signature(s: S, message: String) -> Result<VerifyingKey, Error> {
+
+    let signature = s.signature;
+    let id = s.i;
+    let recovered_key = VerifyingKey::recover_from_msg(message.as_bytes(), &signature, id)?;
+    return Ok(recovered_key);
+}
+// pub fn verify_signature(public :String,signature: Signature,message: String) -> Result<VerifyingKey, Error> {
+//     let bytes: Vec<u8> = message.into_bytes();
+//     println!("{:?}",bytes);
+//     let digest = Keccak256::new_with_prefix(bytes);
+//     let signature = s.signature;
+//     let id = s.i;
+//     let recovered_key = VerifyingKey::recover_from_digest(digest, &signature, id)?;
+//     return Ok(recovered_key);
+// }
+pub fn keccak256(data: &Vec<u8>) -> CoreWrapper<Keccak256Core> {
     let mut hasher = Keccak256::new();
     hasher.update(data);
     return hasher;
 }
+pub fn element_from_padded_slice<C: elliptic_curve::Curve>(
+    data: &[u8],
+) -> elliptic_curve::FieldBytes<C> {
+    let point_len = C::FieldBytesSize::USIZE;
+    if data.len() >= point_len {
+        let offset = data.len() - point_len;
+        for v in data.iter().take(offset) {
+            assert_eq!(*v, 0, "EcdsaVerifier: point too large");
+        }
+        elliptic_curve::FieldBytes::<C>::clone_from_slice(&data[offset..])
+    } else {
+        let iter = core::iter::repeat(0)
+            .take(point_len - data.len())
+            .chain(data.iter().cloned());
+        elliptic_curve::FieldBytes::<C>::from_exact_iter(iter).unwrap()
+    }
+}
 #[cfg(test)]
 mod tests {
+   
     use std::str::FromStr;
 
+    use k256::{ecdsa::{RecoveryId, Signature, VerifyingKey}, pkcs8::DecodePublicKey, Secp256k1, EncodedPoint};
     use sha3::Digest;
+    use k256::ecdsa::signature::Verifier;
 
-    use crate::utils::sign::{
-        keccak256, rlp_encode, sign, SignEip1559transaction, SignLegacyTransaction,
-        SignTransactionRequest,
+    use crate::{
+        key::private_key_to_wallet,
+        sign::{
+            keccak256, rlp_encode, sign, SignEip1559transaction, SignLegacyTransaction,
+            SignTransactionRequest, S,
+        },
     };
 
-    use super::big_num_to_vec;
+    use super::{big_num_to_vec, sign_message, verify_digest_recoverable_signature, element_from_padded_slice};
 
     #[test]
     fn test_big_num_to_vec() {
@@ -331,8 +421,6 @@ mod tests {
         let to = hex::decode("7be15c62e64458fb5e5ee32fed82692abf427d2c").unwrap();
         let value = num_bigint::BigUint::from_str("3000000000000000000").unwrap();
 
-    
-
         let result = sign(
             hex::decode(
                 "f40bb21badf540a80c9cdadf38706408759786b6f991cfbc93556ac95baaf041".to_string(),
@@ -353,8 +441,78 @@ mod tests {
 
         let hash = keccak256(&result);
         let h = hash.finalize();
-        assert_eq!("3267e16968c2679c8132402277ef8296bc134e291bae05001eab6fbba61c016e",hex::encode(h))
-
-      
+        assert_eq!(
+            "3267e16968c2679c8132402277ef8296bc134e291bae05001eab6fbba61c016e",
+            hex::encode(h)
+        )
     }
+    #[test]
+    fn test_sign_message() {
+        let res = sign_message(
+            hex::decode(
+                "f40bb21badf540a80c9cdadf38706408759786b6f991cfbc93556ac95baaf041".to_string(),
+            )
+            .unwrap()
+            .as_slice(),
+            "0".to_string(),
+        )
+        .unwrap();
+        println!("{:?}", hex::encode(res.signature.r().to_bytes().to_vec()));
+        println!("{:?}", hex::encode(res.signature.s().to_bytes().to_vec()));
+        println!("{:?}", res.signature);
+    }
+    #[test]
+    fn test_verify_digest_recoverable_signature() {
+        let res = sign_message(
+            hex::decode(
+                "f40bb21badf540a80c9cdadf38706408759786b6f991cfbc93556ac95baaf041".to_string(),
+            )
+            .unwrap()
+            .as_slice(),
+            "0".to_string(),
+        )
+        .unwrap();
+        let verify = verify_digest_recoverable_signature(res, "0".to_string()).unwrap();
+        let un_comporess_affine_point = verify.to_encoded_point(false).to_bytes();
+
+        let private =
+            hex::decode("f40bb21badf540a80c9cdadf38706408759786b6f991cfbc93556ac95baaf041")
+                .unwrap();
+        let mut private_key: [u8; 32] = [0; 32];
+        private_key.copy_from_slice(&private[0..32]);
+        let wallet = private_key_to_wallet(&private_key).unwrap();
+
+        assert_eq!(
+            un_comporess_affine_point.to_vec(),
+            wallet.un_compressed_public_key
+        )
+    }
+    #[test]
+    fn test_verify_signature() {
+        let public_key_hex = "04af145963bb80bf09abf1c3be6b62929d7af388b92b588868a984833d9dabd5030eadadeedf95ab14e53b00ce1b2dcc2ef6289f9b7c12ef830f07fef5999deaad";
+        let public_key_bytes = hex::decode(public_key_hex).expect("Invalid hex");
+        let public_key = VerifyingKey::from_encoded_point(&EncodedPoint::from_bytes(&public_key_bytes).expect("Invalid public key")).expect("Invalid public key");
+    
+        // 从hex字符串解析签名
+        let signature_hex = "2344a80ac25a9671859f2181ed39f28b55a43c513ab9de0f08b68c44e650a293474c014173727cb25f39c978cc7bbb5d99caf0527e6eec5214a58de5246461f3";
+        let signature_bytes = hex::decode(signature_hex).expect("Invalid hex");
+        let byte_slice: &[u8] = &signature_bytes;
+        let signature = Signature::from_bytes(byte_slice.into()).expect("Invalid signature");
+    
+        // 准备要签名的消息
+        let context = "test001";
+        let message = context.as_bytes();
+    
+        // 验证签名
+        let is_valid = public_key.verify(message, &signature).is_ok();
+    
+        // 打印验证结果
+        if is_valid {
+            println!("Signature is valid!");
+        } else {
+            println!("Signature is invalid!");
+        }
+
+    }
+  
 }

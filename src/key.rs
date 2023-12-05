@@ -12,13 +12,15 @@ pub fn generate_private_key() -> [u8; 32] {
 }
 #[derive(Clone, Debug)]
 pub struct Wallet {
-    private_key: [u8; 32],
-    un_compressed_public_key: Vec<u8>,
-    public_key: Vec<u8>,
-    address: [u8; 20],
+    pub private_key: [u8; 32],
+    pub  un_compressed_public_key: Vec<u8>,
+    pub public_key: Vec<u8>,
+    pub address: [u8; 20],
 }
 pub fn private_key_to_wallet(private_key: &[u8; 32]) -> Result<Wallet, CustomError> {
+    println!("0");
     let secret_key = SecretKey::from_slice(private_key)?;
+    println!("1");
     // 压缩公钥匙 hex
     let compress_public_key = secret_key.public_key().to_sec1_bytes().to_vec();
 

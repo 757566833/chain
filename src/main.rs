@@ -1,6 +1,7 @@
 
 pub mod mnemonic;
 pub mod key;
+pub mod sign;
 #[derive(Debug, Clone)]
 pub struct CustomError {
     pub msg: String,
